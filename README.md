@@ -62,22 +62,8 @@ python app.py
 * Generated banners will be stored in `generated_banners/`.
 
 
-## **6. Folder Structure **
 
-penn-chatbot/
-│
-├─ app.py                # Main application
-├─ agent.py              # AI logic
-├─ generated_banners/    # Auto-generated banners
-├─ requirements.txt      # Dependencies
-├─ .env                  # Your secret keys (ignored in Git)
-├─ .gitignore
-└─ README.md
-```
-
----
-
-## **7. Notes**
+## **6. Notes**
 
 * Ensure you provide your **own API keys** — the project will not run without them.
 * Large generated images can increase repo size; consider cleaning `generated_banners/` if not needed.
