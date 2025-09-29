@@ -1,6 +1,8 @@
 import os
 import uuid
-from flask import Flask, request, jsonify, send_file, url_for
+from flask import Flask, request, jsonify, send_file
+import io
+import base64
 from agent import ask
 
 app = Flask(__name__)
@@ -15,18 +17,20 @@ def query():
         # Get agent response
         output = ask(user_input)
 
-        # Check if output is an image path
-        if isinstance(output, str) and output.startswith("generated_banners/"):
-            filename = os.path.basename(output)
-            download_url = url_for("download_image",filename=filename, _external=True)
-            return jsonify({
-                "type": "image",
-                "message": "Image generated successfully",
-                "download_url": download_url
-            })
+        # Case 1: Image (base64)
+        if isinstance(output, str) and output.startswith("data:image/png;base64,"):
+            image_data = output.split(",")[1]  # remove "data:image/png;base64,"
+            image_bytes = base64.b64decode(image_data)
+            return send_file(
+                io.BytesIO(image_bytes),
+                mimetype="image/png",
+                as_attachment=False,
+                download_name="generated.png"
+            )
 
-       
+        # Case 2: Text
         return jsonify({
+            "type": "text",
             "message": output
         })
 
@@ -36,15 +40,7 @@ def query():
             "message": f"Server error: {str(e)}"
         }), 500
 
-@app.route("/download/<filename>", methods=["GET"])
-def download_image(filename):
-    try:
-        path = os.path.join("generated_banners", filename)
-        if os.path.exists(path):
-            return send_file(path, as_attachment=True)
-        return jsonify({"error": "File not found"}), 404
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+
 
 if __name__ == "__main__":
     app.run(debug=True)

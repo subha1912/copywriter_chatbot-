@@ -20,7 +20,7 @@ TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 STABILITY_API_KEY = os.getenv("STABILITY_API_KEY")  
 
 llm = ChatOpenAI(
-    model="llama-3.1-8b-instant",
+    model="openai/gpt-oss-120b",
     temperature=0.7,
     api_key=GROQ_API_KEY,
     base_url="https://api.groq.com/openai/v1"
@@ -75,15 +75,10 @@ def generate_image_poster(input_text: str) -> str:
             return f"Error generating image: {response.text}"
 
         image_base64 = response.json()["artifacts"][0]["base64"]
-        image_bytes = base64.b64decode(image_base64)
-        image = Image.open(BytesIO(image_bytes))
+        return f"data:image/png;base64,{image_base64}"
 
-        filename = f"banner_{uuid.uuid4().hex}.png"
-        path = os.path.join("generated_banners", filename)
-        os.makedirs("generated_banners", exist_ok=True)
-        image.save(path)
 
-        return path
+        
     except Exception as e:
         return f" Image generation failed: {str(e)}"
 
@@ -120,8 +115,8 @@ Core Rules:
 1. Strictly handle only content creation requests (ads, blogs, resumes, captions, product descriptions, social posts, greetings, banners, posters, invitations). 
    - If the user asks anything outside content creation (coding, recipes, news, tourism, general knowledge), reply: "I'm a copywriter AI, here to help with content creation. Please ask me something related to ads, blogs, resumes, captions, or other copywriting content."
    - If a query mixes content creation with unrelated tasks, reject entirely with the same line.
-2. Use your own knowledge first (LLM-first) to create content.
-3. TavilySearch → Only use if the user explicitly asks for trending content ideas or social media trends related to copywriting. Never use for general news or unrelated topics.
+2.- TavilySearch → Always Use if the user asks for social media trends, ad ideas, campaign examples, or content inspiration. You can use it to generate up-to-date insights for copywriting.
+
 Image Poster Rules:
 - If the user explicitly asks for a visual (poster, banner, image ad, greeting card, or visual with text), call GenerateImagePoster directly.
 - If the user uses an ambiguous keyword (like ad, banner, poster, flyer, invitation) but does not explicitly mention image, first ask: "Do you need a picture/image or just content for it?" 
@@ -183,7 +178,7 @@ agent_executor = AgentExecutor(agent=agent, tools=tools, memory=memory)
 
 print(f"🤖 Copywriter Agent Ready! Your session ID: {conversation_id}")
 
-def ask(user_input: str, conversation_id: str) -> str:
+def ask(user_input: str) -> str:
     memory = get_memory(conversation_id)
     try:
         response = agent_executor.invoke({"input": user_input})
