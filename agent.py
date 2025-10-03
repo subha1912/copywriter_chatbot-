@@ -17,7 +17,9 @@ from langchain.memory import ConversationBufferMemory
 load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
-STABILITY_API_KEY = os.getenv("STABILITY_API_KEY")  
+CLOUDFLARE_API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN")
+CLOUDFLARE_ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID")
+ 
 
 llm = ChatOpenAI(
     model="openai/gpt-oss-120b",
@@ -39,43 +41,38 @@ def tavily_search(query: str) -> str:
 @tool("GenerateImagePoster", return_direct=True, description="Generate a banner with text.")
 def generate_image_poster(input_text: str) -> str:
     try:
-        API_KEY = os.getenv("STABILITY_API_KEY")
-        url = "https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image"
-        headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
+        CLOUDFLARE_API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN")
+        CLOUDFLARE_ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID")
 
-    
+        url = f"https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/black-forest-labs/flux-1-schnell"
+        headers = {"Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}"}
+
+        # Enhance the prompt via LLM (same as before)
         enhancer_prompt = f"""
-                Rewrite the following user request as a SHORT, compact, professional image prompt
-                (max 300 characters) for Stable Diffusion. Keep only the essential visual details
-                and style keywords like "high resolution, realistic, cinematic, vibrant, poster design".
-                Avoid long sentences.
+        Rewrite the following user request as a SHORT, compact, professional image prompt
+        (max 300 characters). Keep only the essential visual details
+        and style keywords like "high resolution, cinematic, poster design".
+        Avoid long sentences.
 
-                User request: {input_text}
-            """
-
+        User request: {input_text}
+        """
         enhanced_prompt = llm.invoke(enhancer_prompt).content.strip()
 
-   
-        payload = {
-            "text_prompts": [
-                {"text": enhanced_prompt},
-                {"text": "low quality, blurry, distorted, text artifacts, watermark", "weight": -1}
-            ],
-            "cfg_scale": 12,
-            "samples": 1,
-            "steps": 50,
-            "sampler": "K_EULER_ANCESTRAL",
-            "width": 1024,
-            "height": 1024
-        }
+        payload = {"prompt": enhanced_prompt, "steps": 4}
 
         response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status() 
-        if response.status_code != 200:
-            return f"Error generating image: {response.text}"
+        response.raise_for_status()
 
-        image_base64 = response.json()["artifacts"][0]["base64"]
+        data = response.json()
+        if "result" not in data or "image" not in data["result"]:
+            return f"Error generating image: {data}"
+
+        image_base64 = data["result"]["image"]
         return f"data:image/png;base64,{image_base64}"
+
+    except Exception as e:
+        return f" Image generation failed: {str(e)}"
+
 
 
         
