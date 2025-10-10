@@ -74,7 +74,6 @@ def generate_image_poster(input_text: str) -> str:
         return f" Image generation failed: {str(e)}"
 
 
-
 tools = [tavily_search, generate_image_poster]
 
 
@@ -181,8 +180,6 @@ def ask(user_input: str, session_id: str) -> dict:
     """
     memory = get_memory(session_id)
     agent_executor = AgentExecutor(agent=agent, tools=tools, memory=memory)
-
-    
 
     try:
         response = agent_executor.invoke({"input": user_input})

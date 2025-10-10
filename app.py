@@ -9,6 +9,8 @@ from agent import ask
 from datetime import datetime, timedelta
 import os
 import json
+import traceback
+
 
 load_dotenv()
 DB_HOST = os.getenv("DB_HOST")
@@ -34,7 +36,7 @@ def validate_user(user_id):
     cur.execute("SELECT * FROM users WHERE user_id = %s", (user_id,))
     user = cur.fetchone()
     if not user:
-        # Optional: insert for testing
+        
         cur.execute("INSERT INTO users (user_id) VALUES (%s)", (user_id,))
         conn.commit()
     cur.close()
@@ -51,35 +53,34 @@ def create_session(user_id):
     return session_id 
 
 def save_message(session_id, user_text, ai_text):
-    conn = get_db_connection()
-    cur = conn.cursor()
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
 
-    combined_message = {
-        "user": user_text,
-        "ai": ai_text,
-        "timestamp": datetime.utcnow().isoformat()
-    }
+        combined_message = {
+            "ai": ai_text,
+            "user": user_text
+        }
 
-    cur.execute("""
-        INSERT INTO messages (session_id, message)
-        VALUES (%s, %s)
-    """, (session_id, json.dumps(combined_message)))
-
-    # set title on first user message
-    cur.execute("""
-        SELECT COUNT(*) FROM messages WHERE session_id = %s
-    """, (session_id,))
-    count = cur.fetchone()[0]
-    if count == 1:
         cur.execute("""
-            UPDATE sessions SET title = %s WHERE session_id = %s
-        """, (user_text[:50], session_id))
+            INSERT INTO messages (session_id, message)
+            VALUES (%s, %s)
+        """, (session_id, json.dumps(combined_message)))
 
-    conn.commit()
-    cur.close()
-    conn.close()
+        cur.execute("""SELECT COUNT(*) AS cnt FROM messages WHERE session_id = %s""", (session_id,))
+        count = cur.fetchone()["cnt"]
+        if count == 1:
+            cur.execute("""UPDATE sessions SET title = %s WHERE session_id = %s""", (user_text[:50], session_id))
 
+        conn.commit()
+        cur.close()
+        conn.close()
 
+    except Exception as e:
+        import traceback
+        print("[save_message] Exception occurred:")
+        traceback.print_exc()
+        raise e
 
 app = Flask(__name__)
 
@@ -95,7 +96,7 @@ def query():
             with open("user_id.txt", "r") as f:
                 user_id = f.read().strip() 
 
-        # Step 2: Handle session_id.txt (create or refresh)
+        
         session_file = "session_id.txt"
         if not os.path.exists(session_file):
             session_id = create_session(user_id)
@@ -111,14 +112,14 @@ def query():
                     with open(session_file, "w") as f:
                         f.write(f"{session_id}|{datetime.utcnow().isoformat()}")
 
-        # Step 3: Validate user input
+        
         user_input = request.json.get("input", "").strip()
         if not user_input:
             return jsonify({"type": "error", "message": "Input cannot be empty"}), 400
 
         validate_user(user_id)
 
-        # Step 4: File handling logic
+        
         include_file, file_content = False, ""
         with get_db_connection() as conn, conn.cursor() as cur:
             cur.execute("""
@@ -137,14 +138,22 @@ def query():
         if include_file:
             user_input = f"Reference file content:\n{file_content}\nUser Query: {user_input}"
 
-        # Step 5: Ask agent
-        result = ask(user_input, session_id)
-        output = result if isinstance(result, str) else result.get("output", "")
+        print(f" [query] Calling ask() with session_id={session_id} and input={user_input}")
+        
 
-        # Step 6: Save messages
+        result = ask(user_input, session_id)
+
+        if not result or not isinstance(result, dict):
+            result = {"output": "I couldn’t generate a proper response this time."}
+
+        output = result.get("output", "I couldn’t generate a proper response this time.")
+        print(f" [query] ask() returned: {result}")
+
+
+        
         save_message(session_id, user_input, output)
 
-        # Step 7: Handle image output
+        
         if isinstance(output, str) and output.startswith("data:image/png;base64,"):
             image_data = output.split(",")[1]
             image_bytes = base64.b64decode(image_data)
@@ -159,7 +168,7 @@ def query():
             response.headers["session_id"] = session_id
             return response
 
-        # Step 8: Text output
+        
         return jsonify({
             "type": "text",
             "message": output,
@@ -168,7 +177,9 @@ def query():
         })
 
     except Exception as e:
-        return jsonify({"type": "error", "message": f"Server error: {str(e)}"}), 500
+        traceback.print_exc()
+        return jsonify({"type": "error", "message": f"Server error: {type(e).__name__}: {str(e)}"}), 500
+
 
     
 @app.route("/new_session", methods=["POST"])
@@ -253,8 +264,10 @@ def upload_file():
 
         return jsonify({"message": f"{file.filename} uploaded successfully", "session_id": session_id})
     except Exception as e:
-        return jsonify({"type": "error", "message": f"Server error: {str(e)}"}), 500
-
+        print(" [query] Exception occurred:")
+        traceback.print_exc()  
+        error_message = f"{type(e).__name__}: {str(e)}"
+        return jsonify({"type": "error", "message": f"Server error: {error_message}"}), 500
 
 
 if __name__ == "__main__":
