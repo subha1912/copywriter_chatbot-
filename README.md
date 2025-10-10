@@ -46,7 +46,8 @@ pip install -r requirements.txt
 ```
 OPENAI_API_KEY=your_openai_key
 GROQ_API_KEY=your_groq_key
-STABILITY_API_KEY=your_stability_key
+CLOUDFLARE_ACCOUNT_ID=your_cloudflare_accout_id
+CLOUDFLARE_API_TOKEN=your_api_token
 ```
 
 > ⚠️ Do not commit `.env` — it contains sensitive keys.
