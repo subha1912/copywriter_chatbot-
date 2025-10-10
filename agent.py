@@ -11,7 +11,7 @@ from langchain_tavily import TavilySearch
 from langchain.tools import tool
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.agents import create_tool_calling_agent, AgentExecutor
-from langchain.memory import ConversationBufferMemory
+from langchain.memory import ConversationBufferWindowMemory
 
 
 load_dotenv()
@@ -75,26 +75,21 @@ def generate_image_poster(input_text: str) -> str:
 
 
 
-        
-    except Exception as e:
-        return f" Image generation failed: {str(e)}"
-
-
 tools = [tavily_search, generate_image_poster]
 
 
 
 SESSION_MEMORY = {}
-def get_memory(conversation_id: str):
+def get_memory(session_id: str):
     now = datetime.utcnow()
-    expired_ids = [cid for cid, data in SESSION_MEMORY.items() if now - data["start"] > timedelta(hours=24)]
-    for cid in expired_ids:
-        del SESSION_MEMORY[cid]
-    if conversation_id in SESSION_MEMORY:
-        mem = SESSION_MEMORY[conversation_id]["memory"]
+    expired_ids = [sid for sid, data in SESSION_MEMORY.items() if now - data["start"] > timedelta(hours=24)]
+    for sid in expired_ids:
+        del SESSION_MEMORY[sid]
+    if session_id in SESSION_MEMORY:
+        mem = SESSION_MEMORY[session_id]["memory"]
     else:
-        mem = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
-        SESSION_MEMORY[conversation_id] = {"start": now, "memory": mem}
+        mem = ConversationBufferWindowMemory(memory_key="chat_history",k=5, return_messages=True)
+        SESSION_MEMORY[session_id] = {"start": now, "memory": mem}
     return mem
 
 
@@ -113,6 +108,17 @@ Core Rules:
    - If the user asks anything outside content creation (coding, recipes, news, tourism, general knowledge), reply: "I'm a copywriter AI, here to help with content creation. Please ask me something related to ads, blogs, resumes, captions, or other copywriting content."
    - If a query mixes content creation with unrelated tasks, reject entirely with the same line.
 2.- TavilySearch → Always Use if the user asks for social media trends, ad ideas, campaign examples, or content inspiration. You can use it to generate up-to-date insights for copywriting.
+3. If the user greets you (like "hi", "hello", "how are you"), respond politely and naturally without triggering fallback.
+4. If the user asks about past messages like:
+   - "What was my previous question?"
+   - "What did I ask first?"
+   - "What did I ask before this?"
+   Check the memory context (last few messages within 24 hours).  
+   - If found, summarize or restate the user’s past query clearly.
+   - If not found, reply naturally: "I’m not having that data right now. Please ask a recent or latest question, and I’ll answer."
+5. Never hallucinate or invent past context. If not available, say so clearly.
+6. Always maintain natural and context-aware conversation flow, even for casual talks or greetings.
+7. Keep all responses compliant with your existing creative writing, fallback, and tone rules.
 
 Image Poster Rules:
 - If the user explicitly asks for a visual (poster, banner, image ad, greeting card, or visual with text), call GenerateImagePoster directly.
@@ -166,29 +172,33 @@ Never output markdown syntax like **bold**, ### headings, or *lists*. Always ret
     ("placeholder", "{agent_scratchpad}")
 ])
 
-
 agent = create_tool_calling_agent(llm=llm, tools=tools, prompt=prompt)
 
-conversation_id = str(uuid.uuid4())
-memory = get_memory(conversation_id)
-agent_executor = AgentExecutor(agent=agent, tools=tools, memory=memory)
+def ask(user_input: str, session_id: str) -> dict:
+    """
+    Takes the user's input and session_id from app.py, processes the query through the agent,
+    and returns a dict { "output": ... } for JSON response.
+    """
+    memory = get_memory(session_id)
+    agent_executor = AgentExecutor(agent=agent, tools=tools, memory=memory)
 
-print(f"🤖 Copywriter Agent Ready! Your session ID: {conversation_id}")
+    
 
-def ask(user_input: str) -> str:
-    memory = get_memory(conversation_id)
     try:
         response = agent_executor.invoke({"input": user_input})
         output = response.get("output", "")
         if not output:
-            output = " I couldn’t generate a proper response this time."
+            output = "I couldn’t generate a proper response this time."
         memory.save_context({"input": user_input}, {"output": output})
-        return output
+        return {"output": output}
     except Exception as e:
-        error_msg = f" I encountered an error: {str(e)}"
+        error_msg = f"I encountered an error: {str(e)}"
         memory.save_context({"input": user_input}, {"output": error_msg})
-        return error_msg
-    
+        return {"output": error_msg}
+
+
+print("🤖 Copywriter Agent Ready and connected with PostgreSQL sessions.")
+
 
     
 # while True:
