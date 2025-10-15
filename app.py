@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 import io
 import base64
 from agent import ask
+from PyPDF2 import PdfReader
+import docx
 from datetime import datetime, timedelta
 import os
 import json
@@ -121,22 +123,38 @@ def query():
 
         
         include_file, file_content = False, ""
+
         with get_db_connection() as conn, conn.cursor() as cur:
             cur.execute("""
-                SELECT filename, file_data, auto_use 
-                FROM uploads WHERE session_id=%s 
+                SELECT filename, extracted_text, auto_use
+                FROM uploads WHERE session_id=%s
                 ORDER BY id DESC LIMIT 1
             """, (session_id,))
             upload = cur.fetchone()
-            if upload:
-                file_content = upload["file_data"].decode("utf-8", errors="ignore")
-                include_file = upload["auto_use"] or "reference file" in user_input.lower()
-                if upload["auto_use"]:
-                    cur.execute("UPDATE uploads SET auto_use=FALSE WHERE session_id=%s AND filename=%s", (session_id, upload["filename"]))
-                    conn.commit()
 
-        if include_file:
+            if upload and upload.get("extracted_text"):
+                file_content = upload["extracted_text"]
+                auto_use = upload.get("auto_use", False)
+
+
+                # Automatically use file for FIRST user query (auto_use=True)
+                if auto_use:
+                    include_file = True
+                    cur.execute(
+                        "UPDATE uploads SET auto_use=FALSE WHERE session_id=%s",
+                        (session_id,)
+                    )
+                    conn.commit()
+                else:
+                    # For later queries: use only if user explicitly says "based on my uploaded file"
+                    if upload and upload.get("extracted_text"):
+                        file_content = upload["extracted_text"]
+                        user_input = f"Reference file content:\n{file_content}\nUser Query:\n{user_input}"
+
+
+        if include_file and file_content:
             user_input = f"Reference file content:\n{file_content}\nUser Query: {user_input}"
+
 
         print(f" [query] Calling ask() with session_id={session_id} and input={user_input}")
         
@@ -232,6 +250,9 @@ def list_sessions():
     
     except Exception as e:
         return jsonify({"type": "error", "message": f"Server error: {str(e)}"}), 500
+ 
+
+
 @app.route("/upload", methods=["POST"])
 def upload_file():
     try:
@@ -242,12 +263,29 @@ def upload_file():
         if not file.filename:
             return jsonify({"error": "Empty filename"}), 400
 
-        file.seek(0, os.SEEK_END)
-        size = file.tell()
-        file.seek(0)
-        if size > 20 * 1024 * 1024:  # 20 MB limit
-            return jsonify({"error": "File too large (max 20 MB)"}), 400
+        filename = file.filename
+        file_bytes = file.read()
 
+        # ✅ Extract readable text here itself (no file_tools.py needed)
+        filename_lower = filename.lower()
+        extracted_text = ""
+
+        if filename_lower.endswith(".pdf"):
+            reader = PdfReader(io.BytesIO(file_bytes))
+            for page in reader.pages:
+                extracted_text += page.extract_text() or ""
+
+        elif filename_lower.endswith(".docx"):
+            document = docx.Document(io.BytesIO(file_bytes))
+            extracted_text = "\n".join([p.text for p in document.paragraphs])
+
+        elif filename_lower.endswith(".txt"):
+            extracted_text = file_bytes.decode("utf-8", errors="ignore")
+
+        else:
+            extracted_text = "Unsupported file format."
+
+        # ✅ Store to DB
         if not os.path.exists("session_id.txt"):
             return jsonify({"error": "No active session found"}), 400
 
@@ -256,18 +294,28 @@ def upload_file():
 
         conn = get_db_connection()
         cur = conn.cursor()
+        cur.execute("UPDATE uploads SET auto_use=FALSE WHERE session_id=%s", (session_id,))
         cur.execute("""
-            INSERT INTO uploads (session_id, filename, file_data, content_type)
-            VALUES (%s, %s, %s, %s)
-        """, (session_id, file.filename, file.read(), file.content_type))
-        conn.commit(); cur.close(); conn.close()
+            INSERT INTO uploads (session_id, filename, file_data, content_type, extracted_text, auto_use)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (session_id, filename, file_bytes, file.content_type, extracted_text, True))
+        conn.commit()
+        cur.close()
+        conn.close()
 
-        return jsonify({"message": f"{file.filename} uploaded successfully", "session_id": session_id})
+        return jsonify({
+            "message": f"{filename} uploaded and processed successfully.",
+            "session_id": session_id
+        })
+
     except Exception as e:
-        print(" [query] Exception occurred:")
-        traceback.print_exc()  
-        error_message = f"{type(e).__name__}: {str(e)}"
-        return jsonify({"type": "error", "message": f"Server error: {error_message}"}), 500
+        traceback.print_exc()
+        return jsonify({
+            "type": "error",
+            "message": f"Server error: {type(e).__name__}: {str(e)}"
+        }), 500
+
+
 
 
 if __name__ == "__main__":

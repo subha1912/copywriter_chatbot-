@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont
 from langchain_openai import ChatOpenAI
 from langchain_tavily import TavilySearch
+
 from langchain.tools import tool
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.agents import create_tool_calling_agent, AgentExecutor
