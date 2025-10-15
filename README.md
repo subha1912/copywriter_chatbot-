@@ -13,8 +13,9 @@ A brief description of your project:
 1. **User Input**: User provides a prompt (text) describing the desired copy or content.
 2. **API Call**: The chatbot uses a language model (e.g., OpenAI, Groq) to generate responses.
 3. **Output Generation**: Generated content is processed and returned as text or images.
-4. **Banner Creation**: Optional generated banners are stored in a `generated_banners/` folder.
+4. **Banner Creation**: Show in the Chat interface if user wants can download manually.
 5. **Repeat**: Users can continue providing prompts to generate new outputs.
+6. **Support Upload files**: If the user wants to upload any file for reference it will support and also take as a reference for the first query after uploading and for later use need to mention explicitly or else not use the uploaded files.
 
 
 ## **4. Setup Instructions**
@@ -60,14 +61,13 @@ CLOUDFLARE_API_TOKEN=your_api_token
 python app.py
 
 * Follow the CLI instructions or use the provided UI (if any).
-* Generated banners will be stored in `generated_banners/`.
+* display the image in the user interface based upon the user need download manually `.
 
 
 
 ## **6. Notes**
 
 * Ensure you provide your **own API keys** — the project will not run without them.
-* Large generated images can increase repo size; consider cleaning `generated_banners/` if not needed.
 * Compatible with Python 3.10+.
 
 
